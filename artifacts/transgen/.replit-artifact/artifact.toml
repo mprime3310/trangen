@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/"
+title = "TransGen"
+version = "1.0.0"
+id = "artifacts/transgen"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 24626
+
+[services.development]
+run = "pnpm --filter @workspace/transgen run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/transgen", "run", "build" ]
+publicDir = "artifacts/transgen/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "24626"
+BASE_PATH = "/"
