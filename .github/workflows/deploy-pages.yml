@@ -1,0 +1,78 @@
+# Publishes the TransGen frontend (@workspace/transgen) to GitHub Pages.
+#
+# The app is a pure client-side bundle (no API calls), so a static host is all it
+# needs: this workflow builds the Vite app and deploys artifacts/transgen/dist/public.
+#
+# One-time setup in the repo: Settings -> Pages -> Build and deployment -> Source:
+# "GitHub Actions".
+name: Deploy TransGen to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Let a running deploy finish, but only keep the newest queued run.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build static site
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          # The lockfile uses the "catalog:" protocol and pnpm-workspace.yaml uses
+          # minimumReleaseAge, both of which need pnpm >= 10.16.
+          version: 10.34.5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        # Installs the whole workspace (the app resolves @workspace/* libs).
+        # Runs scripts/preinstall.cjs, which requires pnpm as the package manager.
+        run: pnpm install --frozen-lockfile
+
+      - name: Build @workspace/transgen
+        # Root "build" script is avoided on purpose: it runs typecheck first, which
+        # currently fails in this repo. This mirrors Replit's artifact build.
+        run: pnpm --filter @workspace/transgen run build
+        env:
+          NODE_ENV: production
+          # vite.config.ts throws unless PORT and BASE_PATH are both provided.
+          PORT: "10000"
+          # A project site is served from https://<owner>.github.io/<repo>/, so the
+          # asset base must match the repository name.
+          BASE_PATH: /${{ github.event.repository.name }}/
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: artifacts/transgen/dist/public
+
+  deploy:
+    name: Deploy to GitHub Pages
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4
