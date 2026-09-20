@@ -1,0 +1,81 @@
+# ============================================================================
+# Render Blueprint (https://render.com/docs/blueprint-spec)
+# ============================================================================
+# What gets deployed: artifacts/transgen ("TransGen"), a pure client-side
+# Vite 7 + React 19 app. Nothing in artifacts/transgen/src imports
+# @workspace/api-client-react, and there is no router or window.location usage,
+# so the app needs NO backend at all. It therefore deploys as a Render
+# *Static Site*: free forever, served from Render's global CDN, and (unlike a
+# free Web Service) it never spins down after inactivity.
+#
+# How to deploy:
+#   1. Push this repo to GitHub/GitLab (repo root = this folder).
+#   2. Render Dashboard -> New + -> Blueprint -> pick the repo. Render reads
+#      this file and creates the "transgen" static site.
+#   ...or create it by hand: New + -> Static Site, then use the values below.
+# ============================================================================
+
+services:
+  - type: web
+    name: transgen
+    runtime: static
+    # Root directory: leave EMPTY / repo root. The build needs pnpm-workspace.yaml,
+    # pnpm-lock.yaml, artifacts/transgen and the lib/* workspace packages, and
+    # Render hides everything outside the root directory from the build.
+    #
+    # The lockfile was generated with pnpm 10 (`catalogs:`, `minimumReleaseAge:`
+    # in pnpm-workspace.yaml need pnpm >= 10.16), so pin the pnpm version here
+    # instead of relying on whatever pnpm Render's image ships.
+    # If `npm install -g` is ever blocked, swap in: npx --yes pnpm@10.34.5 ...
+    buildCommand: >-
+      npm install -g pnpm@10.34.5 &&
+      pnpm install --frozen-lockfile &&
+      pnpm --filter @workspace/transgen run build
+    # vite.config.ts writes the production bundle here (outDir).
+    staticPublishPath: artifacts/transgen/dist/public
+    autoDeploy: true
+    envVars:
+      # We run `pnpm install` ourselves in buildCommand (pinned version), so stop
+      # Render from auto-installing with an unpinned package manager.
+      - key: SKIP_INSTALL_DEPS
+        value: "true"
+      # vite.config.ts throws "PORT environment variable is required" at CONFIG
+      # LOAD time, so it must exist even for a static build. The value only
+      # matters for the dev/preview server; it just has to be a positive number.
+      - key: PORT
+        value: "10000"
+      # Also required by vite.config.ts; becomes vite's `base`. "/" = domain root.
+      # Use "/some-subpath/" only if you serve the site from a subpath.
+      - key: BASE_PATH
+        value: "/"
+    # No client-side routing in this app, so no /* -> /index.html rewrite is
+    # needed. Add the two lines below later if you introduce a router:
+    # routes:
+    #   - type: rewrite
+    #     source: /*
+    #     destination: /index.html
+
+# ============================================================================
+# OPTIONAL, NOT NEEDED FOR THE APP TO WORK: the Express API
+# (artifacts/api-server). It only exposes GET /api/healthz, the frontend never
+# calls it, and it does not import @workspace/db, so it needs no database.
+# Left disabled because free Web Services spin down after ~15 min idle
+# (~1 min cold start) and would consume your 500 monthly pipeline minutes.
+# Uncomment to deploy it as well.
+# ============================================================================
+#  - type: web
+#    name: transgen-api
+#    runtime: node
+#    plan: free
+#    buildCommand: >-
+#      npm install -g pnpm@10.34.5 &&
+#      pnpm install --frozen-lockfile &&
+#      pnpm --filter @workspace/api-server run build
+#    startCommand: pnpm --filter @workspace/api-server run start
+#    healthCheckPath: /api/healthz
+#    autoDeploy: true
+#    envVars:
+#      - key: SKIP_INSTALL_DEPS
+#        value: "true"
+#      - key: NODE_ENV
+#        value: production

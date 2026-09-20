@@ -47,3 +47,7 @@ Thumbs.db
 # Replit
 .cache/
 .local/
+
+# local dev/run logs
+.dev-server.log
+.api-server.log
