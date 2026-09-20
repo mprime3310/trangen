@@ -3,8 +3,10 @@
 # The app is a pure client-side bundle (no API calls), so a static host is all it
 # needs: this workflow builds the Vite app and deploys artifacts/transgen/dist/public.
 #
-# One-time setup in the repo: Settings -> Pages -> Build and deployment -> Source:
-# "GitHub Actions".
+# One-time setup in the repo (the deploy job fails until this is done): go to
+# Settings -> Pages -> Build and deployment -> Source, and pick "GitHub Actions".
+# The site is then served at https://<owner>.github.io/<repo>/. Afterwards, re-run
+# the latest run from the Actions tab (or push any commit) to publish.
 name: Deploy TransGen to GitHub Pages
 
 on:
@@ -48,6 +50,14 @@ jobs:
         # Runs scripts/preinstall.cjs, which requires pnpm as the package manager.
         run: pnpm install --frozen-lockfile
 
+      - name: Configure Pages
+        id: pages
+        uses: actions/configure-pages@v5
+        with:
+          # Pages cannot be enabled with the default GITHUB_TOKEN; enable it once
+          # under Settings -> Pages (see the header of this file).
+          enablement: false
+
       - name: Build @workspace/transgen
         # Root "build" script is avoided on purpose: it runs typecheck first, which
         # currently fails in this repo. This mirrors Replit's artifact build.
@@ -56,9 +66,10 @@ jobs:
           NODE_ENV: production
           # vite.config.ts throws unless PORT and BASE_PATH are both provided.
           PORT: "10000"
-          # A project site is served from https://<owner>.github.io/<repo>/, so the
-          # asset base must match the repository name.
-          BASE_PATH: /${{ github.event.repository.name }}/
+          # Asset base. configure-pages reports "/<repo>" for a project site and an
+          # empty string when the site is served from a domain root, so appending a
+          # slash yields a correct base either way.
+          BASE_PATH: "${{ steps.pages.outputs.base_path }}/"
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
