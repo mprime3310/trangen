@@ -9,11 +9,13 @@ import {
   buildAamvaPdf417,
   buildMagStripe,
   generateExampleFields,
+  generateIcn,
+  generateIdNumber,
   CSV_EXAMPLE,
 } from "../utils/aamva";
 import {
   generatePDF417Canvas,
-  generateCode39Canvas,
+  generateCode128Canvas,
   downloadCanvas,
   BarcodeOptions,
 } from "../utils/barcodeGenerator";
@@ -48,6 +50,7 @@ const FIELD_LABELS: Record<keyof DLFields, { simple: string; full: string }> = {
   height: { simple: "Height", full: "DAU – Physical Description – Height" },
   weight: { simple: "Weight (lbs)", full: "DAW – Physical Description – Weight (lbs)" },
   idNumber: { simple: "ID / License Number", full: "DAQ – Customer ID Number" },
+  icn: { simple: "ICN (Inventory Control No.)", full: "DCK – Inventory Control Number" },
   licenseClass: { simple: "License Class", full: "DCA – Jurisdiction-specific vehicle class" },
   expDate: { simple: "Expiration Date", full: "DBA – Document Expiration Date" },
   issueDate: { simple: "Issue Date", full: "DBD – Document Issue Date" },
@@ -63,7 +66,7 @@ const emptyFields = (): DLFields => ({
   lastName: "", firstName: "", middleName: "",
   address1: "", address2: "", city: "", state: "", zip: "",
   country: "USA", dob: "", sex: "1", eyeColor: "BRO",
-  hairColor: "BRO", height: "", weight: "", idNumber: "",
+  hairColor: "BRO", height: "", weight: "", idNumber: "", icn: "",
   licenseClass: "C", expDate: "", issueDate: "",
   documentDiscriminator: "", restrictions: "NONE",
   endorsements: "NONE", vehicleClass: "C",
@@ -83,10 +86,14 @@ export default function SingleBarcode({ settings, onLog, selectedState, onStateC
 
   const canvas2D = useRef<HTMLCanvasElement>(null);
   const canvas1D = useRef<HTMLCanvasElement>(null);
+  // Tracks whether the user pinned a custom ICN. When false, the ICN is
+  // regenerated dynamically on every generate.
+  const icnLocked = useRef(false);
 
   useEffect(() => {
     if (settings.populateExample) {
       const example = generateExampleFields(selectedState || "CA");
+      icnLocked.current = false;
       setFields(example);
     }
   }, [settings.populateExample, selectedState]);
@@ -98,6 +105,9 @@ export default function SingleBarcode({ settings, onLog, selectedState, onStateC
   });
 
   const handleField = (key: keyof DLFields, value: string) => {
+    // A non-empty, manually-entered ICN pins the value; clearing it re-enables
+    // dynamic generation.
+    if (key === "icn") icnLocked.current = value.trim() !== "";
     setFields(prev => ({ ...prev, [key]: value }));
     setGenerated(false);
   };
@@ -110,18 +120,32 @@ export default function SingleBarcode({ settings, onLog, selectedState, onStateC
 
   const generate = () => {
     try {
-      const data = buildAamvaPdf417(fields);
+      // Resolve the fields for this run. The ICN (and, when enabled, the ID
+      // number) is generated dynamically rather than being a fixed value.
+      const next: DLFields = { ...fields };
+      if (settings.populateIdNum) {
+        next.idNumber = generateIdNumber(next.state);
+        next.icn = generateIcn();
+      } else if (!icnLocked.current) {
+        // The ICN is dynamic: a fresh value is generated on every run unless the
+        // user has typed a custom (non-empty) ICN.
+        next.icn = generateIcn();
+      }
+      setFields(next);
+      setGenerated(false);
+
+      const data = buildAamvaPdf417(next);
       if (canvas2D.current) {
         generatePDF417Canvas(canvas2D.current, data, barOptions);
-        onLog(`[${new Date().toLocaleTimeString()}] PDF417 2D barcode generated for ${fields.firstName} ${fields.lastName}`);
+        onLog(`[${new Date().toLocaleTimeString()}] PDF417 2D barcode generated for ${next.firstName} ${next.lastName}`);
       }
       if (canvas1D.current) {
-        const code39Text = (fields.idNumber || "ID").toUpperCase().replace(/[^A-Z0-9\-\.\ \$\/\+%]/g, "");
-        generateCode39Canvas(canvas1D.current, code39Text, barOptions);
-        onLog(`[${new Date().toLocaleTimeString()}] Code39 1D barcode generated`);
+        const icnText = (next.icn || next.idNumber || "0").replace(/[^ -~]/g, "").trim() || "0";
+        generateCode128Canvas(canvas1D.current, icnText, barOptions);
+        onLog(`[${new Date().toLocaleTimeString()}] Code 128 1D barcode generated (ICN: ${icnText})`);
       }
       if (settings.generateMags) {
-        const mags = buildMagStripe(fields);
+        const mags = buildMagStripe(next);
         setMagStripe(mags);
         onLog(`[${new Date().toLocaleTimeString()}] Magnetic stripe data generated`);
       }
@@ -256,7 +280,7 @@ export default function SingleBarcode({ settings, onLog, selectedState, onStateC
           value={val}
           onChange={e => handleField(key, e.target.value)}
           placeholder={FIELD_LABELS[key].simple}
-          readOnly={key === "idNumber" && settings.populateIdNum}
+          readOnly={(key === "idNumber" || key === "icn") && settings.populateIdNum}
         />
       </div>
     );
@@ -266,7 +290,7 @@ export default function SingleBarcode({ settings, onLog, selectedState, onStateC
     "lastName", "firstName", "middleName",
     "address1", "address2", "city", "state", "zip", "country",
     "dob", "sex", "eyeColor", "hairColor", "height", "weight",
-    "idNumber", "licenseClass", "vehicleClass",
+    "idNumber", "icn", "licenseClass", "vehicleClass",
     "expDate", "issueDate",
     "documentDiscriminator", "restrictions", "endorsements",
     "complianceType",
@@ -338,7 +362,7 @@ export default function SingleBarcode({ settings, onLog, selectedState, onStateC
           </div>
 
           <div>
-            <div className="text-xs font-semibold text-muted-foreground mb-1">Code39 1D Barcode</div>
+            <div className="text-xs font-semibold text-muted-foreground mb-1">Code 128 1D Barcode (ICN)</div>
             <div className="bg-white border border-border rounded p-2 min-h-[60px] flex items-center justify-center overflow-x-auto">
               <canvas ref={canvas1D} />
             </div>

@@ -12,12 +12,14 @@ export function generatePDF417Canvas(
   text: string,
   options: BarcodeOptions
 ): void {
+  // PDF417 does not take width/height options (those apply to linear barcodes
+  // and would otherwise be interpreted as physical sizes, shrinking the code).
+  // Size the matrix with `scale` instead so the module size stays readable.
+  const scale = Math.max(2, Math.min(6, Math.round(options.width2D / 100)));
   bwipjs.toCanvas(canvas, {
     bcid: "pdf417",
     text: text,
-    scale: 2,
-    height: Math.max(options.height2D / 10, 5),
-    width: Math.max(options.width2D / 10, 5),
+    scale: scale,
     includetext: false,
     eclevel: 3,
   });

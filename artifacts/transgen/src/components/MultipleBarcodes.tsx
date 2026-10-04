@@ -7,6 +7,7 @@ import {
   parseCSVFields,
   buildAamvaPdf417,
   buildMagStripe,
+  generateIcn,
   DLFields,
 } from "../utils/aamva";
 import { BarcodeOptions } from "../utils/barcodeGenerator";
@@ -25,7 +26,7 @@ interface GeneratedEntry {
   id: number;
   fields: DLFields;
   pdf417Url: string;
-  code39Url: string;
+  code128Url: string;
   magStripe?: { track1: string; track2: string; track3: string };
 }
 
@@ -88,13 +89,14 @@ export default function MultipleBarcodes({ settings, onLog, selectedState, onSta
             }
             const data = buildAamvaPdf417(fields);
             const pdf417Url = generateBarcodeDataUrl("pdf417", data, {
-              height: Math.max(barOptions.height2D / 10, 5),
+              scale: 3,
               eclevel: 3,
               includetext: false,
             } as unknown as bwipjs.RenderOptions);
 
-            const code39Text = (fields.idNumber || "ID").toUpperCase().replace(/[^A-Z0-9\-\.\s$\/+%]/g, "") || "0";
-            const code39Url = generateBarcodeDataUrl("code39", code39Text, {
+            // The ICN is dynamic: use the CSV value when present, otherwise generate one.
+            const icnText = (fields.icn || "").replace(/[^ -~]/g, "").trim() || generateIcn();
+            const code128Url = generateBarcodeDataUrl("code128", icnText, {
               height: Math.max(barOptions.height1D / 10, 8),
               includetext: true,
               textxalign: "center",
@@ -102,7 +104,7 @@ export default function MultipleBarcodes({ settings, onLog, selectedState, onSta
 
             const magStripe = settings.generateMags ? buildMagStripe(fields) : undefined;
 
-            generated.push({ id: i + 1, fields, pdf417Url, code39Url, magStripe });
+            generated.push({ id: i + 1, fields, pdf417Url, code128Url, magStripe });
             onLog(`[${new Date().toLocaleTimeString()}] Generated barcode for ${fields.firstName} ${fields.lastName} (row ${i + 1})`);
           } catch (e: unknown) {
             const msg = e instanceof Error ? e.message : String(e);
@@ -130,7 +132,7 @@ export default function MultipleBarcodes({ settings, onLog, selectedState, onSta
       setTimeout(() => {
         const a2 = document.createElement("a");
         a2.download = `${entry.fields.idNumber || `row_${entry.id}`}_1d.png`;
-        a2.href = entry.code39Url;
+        a2.href = entry.code128Url;
         a2.click();
       }, 100 * entry.id);
     });
@@ -212,8 +214,8 @@ export default function MultipleBarcodes({ settings, onLog, selectedState, onSta
                     <img src={entry.pdf417Url} alt="PDF417" className="border border-border bg-white" style={{ maxWidth: 200 }} />
                   </div>
                   <div>
-                    <div className="text-xs text-muted-foreground mb-0.5">Code39</div>
-                    <img src={entry.code39Url} alt="Code39" className="border border-border bg-white" style={{ maxWidth: 200 }} />
+                    <div className="text-xs text-muted-foreground mb-0.5">Code 128 (ICN)</div>
+                    <img src={entry.code128Url} alt="Code128" className="border border-border bg-white" style={{ maxWidth: 200 }} />
                   </div>
                 </div>
                 {entry.magStripe && (
@@ -225,7 +227,7 @@ export default function MultipleBarcodes({ settings, onLog, selectedState, onSta
                 )}
                 <div className="flex gap-2 mt-1">
                   <a href={entry.pdf417Url} download={`${entry.fields.idNumber}_2d.png`} className="text-xs text-primary underline">DL 2D</a>
-                  <a href={entry.code39Url} download={`${entry.fields.idNumber}_1d.png`} className="text-xs text-primary underline">ID 1D</a>
+                  <a href={entry.code128Url} download={`${entry.fields.icn || entry.fields.idNumber}_1d.png`} className="text-xs text-primary underline">ID 1D</a>
                 </div>
               </div>
             ))}

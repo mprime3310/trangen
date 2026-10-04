@@ -51,3 +51,5 @@ Thumbs.db
 # local dev/run logs
 .dev-server.log
 .api-server.log
+artifacts/transgen/dev.out.log
+artifacts/transgen/dev.err.log

@@ -15,6 +15,7 @@ export interface DLFields {
   height: string;
   weight: string;
   idNumber: string;
+  icn: string;
   licenseClass: string;
   expDate: string;
   issueDate: string;
@@ -52,8 +53,18 @@ function formatDate(dateStr: string): string {
   return `${mm}${dd}${yyyy}`;
 }
 
-function padRight(str: string, len: number): string {
-  return str.substring(0, len).padEnd(len, " ");
+/**
+ * Fixed-width AAMVA field rule — mirrors the reference Transgen (StateGenerator.java).
+ * These fields occupy a set width in the payload even when short:
+ *  - dates (F8N/F4N) zero-fill when missing/short
+ *  - codes (V1/V3/V6 etc.) pass through trimmed; missing codes fall back to the
+ *    defaults the reference puts in `data` (DCG=USA, EYE=BRO, HGT="000000"...).
+ */
+function fixed(val: string, len: number, pad: "zero" | "none"): string {
+  const t = (val || "").trim();
+  if (t.length >= len) return t.substring(0, len);
+  if (t === "") return pad === "zero" ? "0".repeat(len) : "";
+  return t;
 }
 
 export function buildAamvaPdf417(fields: DLFields, issuerIdOverride?: string): string {
@@ -64,32 +75,38 @@ export function buildAamvaPdf417(fields: DLFields, issuerIdOverride?: string): s
 
   const subfileOffset = "0000";
 
-  const DL_DATA = [
-    `DCS${padRight(fields.lastName.toUpperCase(), 40)}`,
-    `DAC${padRight(fields.firstName.toUpperCase(), 40)}`,
-    `DAD${padRight(fields.middleName.toUpperCase(), 40)}`,
-    `DAG${padRight(fields.address1, 35)}`,
-    `DAH${padRight(fields.address2, 35)}`,
-    `DAI${padRight(fields.city, 20)}`,
-    `DAJ${padRight(fields.state, 2)}`,
-    `DAK${padRight(fields.zip.replace(/-/g, ""), 11)}`,
-    `DCG${padRight(fields.country || "USA", 3)}`,
-    `DAQ${padRight(fields.idNumber, 25)}`,
-    `DBA${formatDate(fields.expDate)}`,
-    `DBB${formatDate(fields.dob)}`,
-    `DBC${fields.sex.charAt(0)}`,
-    `DAY${padRight(fields.eyeColor, 3)}`,
-    `DAU${padRight(fields.height, 6)}`,
-    `DAW${padRight(fields.weight, 3)}`,
-    `DBD${formatDate(fields.issueDate)}`,
-    `DCA${padRight(fields.vehicleClass || fields.licenseClass, 6)}`,
-    `DCB${padRight(fields.restrictions, 12)}`,
-    `DCD${padRight(fields.endorsements, 5)}`,
-    `DCF${padRight(fields.documentDiscriminator, 25)}`,
-    `DCK${padRight(fields.idNumber, 25)}`,
-    `DDA${fields.complianceType || "F"}`,
-  ].join("\n");
+  const v = (s: string | undefined) => (s || "").trim();
 
+  const DL_DATA = [
+    [`DCS`, v(fields.lastName).toUpperCase()],
+    [`DAC`, v(fields.firstName).toUpperCase()],
+    [`DAD`, v(fields.middleName).toUpperCase()],
+    [`DAG`, v(fields.address1)],
+    [`DAH`, v(fields.address2)],
+    [`DAI`, v(fields.city)],
+    [`DAJ`, v(fields.state)],
+    [`DAK`, v(fields.zip).replace(/-/g, "")],
+    [`DCG`, v(fields.country) || "USA"],
+    [`DAQ`, v(fields.idNumber)],
+    [`DBA`, fixed(formatDate(fields.expDate), 8, "zero")],
+    [`DBB`, fixed(formatDate(fields.dob), 8, "zero")],
+    [`DBC`, v(fields.sex).charAt(0) || "1"],
+    [`DAY`, v(fields.eyeColor) || "BRO"],
+    [`DAU`, v(fields.height) || "000000"],
+    [`DAW`, v(fields.weight)],
+    [`DBD`, fixed(formatDate(fields.issueDate), 8, "zero")],
+    [`DCA`, v(fields.vehicleClass || fields.licenseClass) || "NONE"],
+    [`DCB`, v(fields.restrictions) || "NONE"],
+    [`DCD`, v(fields.endorsements) || "NONE"],
+    [`DCF`, v(fields.documentDiscriminator)],
+    [`DCK`, v(fields.icn) || v(fields.idNumber)],
+    [`DDA`, v(fields.complianceType) || "F"],
+    // Truncation flags — the reference Transgen always emits these as "U".
+    [`DDF`, "U"],
+    [`DDG`, "U"],
+  ].filter(([, val]) => val !== "").map(([k, val]) => `${k}${val}`).join("\n");
+
+  // Subfile length = "DL\n" (3) + body chars + trailing "\n" (1).
   const subfileLength = String(DL_DATA.length + 4).padStart(4, "0");
 
   const header =
@@ -123,6 +140,35 @@ export function buildMagStripe(fields: DLFields): {
   };
 }
 
+const DIGITS = "0123456789";
+
+/**
+ * Generate a random string from the given character set.
+ * (Port of the reference Transgen Utils.randomString.)
+ */
+export function randomString(length: number, characterSet: string): string {
+  let out = "";
+  for (let i = 0; i < length; i++) {
+    out += characterSet.charAt(Math.floor(Math.random() * characterSet.length));
+  }
+  return out;
+}
+
+/**
+ * Dynamically generate an Inventory Control Number (AAMVA DCK).
+ * The ICN is the data encoded into the 1D (Code 128) barcode.
+ */
+export function generateIcn(length = 11): string {
+  return randomString(length, DIGITS);
+}
+
+/**
+ * Dynamically generate a customer ID / license number (AAMVA DAQ).
+ */
+export function generateIdNumber(state: string, length = 8): string {
+  return `${(state || "CA").toUpperCase()}${randomString(length, DIGITS)}`;
+}
+
 export function generateExampleFields(state: string): DLFields {
   const today = new Date();
   const issueDate = new Date(today.getFullYear() - 1, today.getMonth(), today.getDate());
@@ -147,7 +193,8 @@ export function generateExampleFields(state: string): DLFields {
     hairColor: "BRO",
     height: "069 in",
     weight: "185",
-    idNumber: `${state || "CA"}12345678`,
+    idNumber: generateIdNumber(state),
+    icn: generateIcn(),
     licenseClass: "C",
     expDate: fmt(expDate),
     issueDate: fmt(issueDate),
@@ -179,6 +226,7 @@ export function parseCSVFields(row: Record<string, string>): DLFields {
     height: get("height") || get("HT"),
     weight: get("weight") || get("WT"),
     idNumber: get("idNumber") || get("id") || get("ID"),
+    icn: get("icn") || get("ICN") || get("dck") || get("DCK"),
     licenseClass: get("licenseClass") || get("class") || "C",
     expDate: get("expDate") || get("exp") || get("EXP"),
     issueDate: get("issueDate") || get("iss") || get("ISS"),
@@ -191,6 +239,6 @@ export function parseCSVFields(row: Record<string, string>): DLFields {
   };
 }
 
-export const CSV_EXAMPLE = `lastName,firstName,middleName,address1,address2,city,state,zip,country,dob,sex,eyeColor,hairColor,height,weight,idNumber,licenseClass,expDate,issueDate,documentDiscriminator,restrictions,endorsements,vehicleClass,complianceType
-SAMPLE,JOHN,QUINCY,123 MAIN ST,,ANYTOWN,CA,900010000,USA,1996-06-15,1,BRO,BRO,069 in,185,CA12345678,C,2029-06-15,2023-06-15,00000000000000000,NONE,NONE,C,F
-DOE,JANE,ALICE,456 ELM AVE,APT 2B,SPRINGFIELD,TX,733010000,USA,1990-03-22,2,BLU,BLN,065 in,130,TX87654321,C,2028-03-22,2022-03-22,11111111111111111,NONE,NONE,C,F`;
+export const CSV_EXAMPLE = `lastName,firstName,middleName,address1,address2,city,state,zip,country,dob,sex,eyeColor,hairColor,height,weight,idNumber,icn,licenseClass,expDate,issueDate,documentDiscriminator,restrictions,endorsements,vehicleClass,complianceType
+SAMPLE,JOHN,QUINCY,123 MAIN ST,,ANYTOWN,CA,900010000,USA,1996-06-15,1,BRO,BRO,069 in,185,CA12345678,10000280866,C,2029-06-15,2023-06-15,00000000000000000,NONE,NONE,C,F
+DOE,JANE,ALICE,456 ELM AVE,APT 2B,SPRINGFIELD,TX,733010000,USA,1990-03-22,2,BLU,BLN,065 in,130,TX87654321,10000280867,C,2028-03-22,2022-03-22,11111111111111111,NONE,NONE,C,F`;
