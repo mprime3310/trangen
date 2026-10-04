@@ -3,6 +3,8 @@
 AAMVA-compliant driver's license / ID barcode generator — **PDF417 2D** barcode plus **Code 128 1D** barcode (Inventory Control Number), with a per-state generator UI, batch (CSV) mode, and magnetic-stripe data.
 
 > Repo root is this folder (`Live-Transgen/Live-Transgen`). The outer `Live-Transgen/` folder is just a download wrapper — always run `git` and `pnpm` commands from here.
+>
+> **How to use the commands below:** copy a whole block, paste it into your terminal, press `Enter`. Each block can be pasted **all at once** — no need to go line by line.
 
 ```text
 Live-Transgen/
@@ -28,7 +30,7 @@ Live-Transgen/
 
 ---
 
-## 1. Clone & install
+## 1. Clone & install (first time only — paste all at once)
 
 ```powershell
 git clone https://github.com/mprime3310/trangen.git
@@ -47,14 +49,16 @@ The dev server **requires two environment variables** (`vite.config.ts` throws a
 | `PORT` | port the dev server listens on | `5173` |
 | `BASE_PATH` | Vite `base` (URL prefix the app is served from) | `/` |
 
-### Windows (PowerShell)
+### Windows (PowerShell) — copy, paste all 4 lines at once, press Enter
 
 ```powershell
-cd '.\artifacts\transgen'
-$env:PORT = '5173'
-$env:BASE_PATH = '/'
+cd 'c:\Users\mprim\Downloads\Live-Transgen\Live-Transgen\artifacts\transgen'
+$env:PORT='5173'
+$env:BASE_PATH='/'
 pnpm run dev
 ```
+
+> Already cloned the repo to a different folder? Replace the first line with your own path, e.g. `cd '.\artifacts\transgen'` (run from the repo root).
 
 ### macOS / Linux (bash)
 
@@ -63,15 +67,16 @@ cd artifacts/transgen
 PORT=5173 BASE_PATH=/ pnpm run dev
 ```
 
-Then open **http://localhost:5173/** in your browser.
+Then open **http://localhost:5173/** in your browser. Keep that terminal open while using the app — `Ctrl+C` stops the server.
 
 The server binds to `0.0.0.0`, so other devices on your LAN can also reach it, e.g. `http://<your-lan-ip>:5173/`.
 
-### Use a different port
+### If port 5173 is busy (paste all at once)
 
 ```powershell
-$env:PORT = '8080'
-$env:BASE_PATH = '/'
+cd 'c:\Users\mprim\Downloads\Live-Transgen\Live-Transgen\artifacts\transgen'
+$env:PORT='8080'
+$env:BASE_PATH='/'
 pnpm run dev
 # → http://localhost:8080/
 ```
